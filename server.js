@@ -4,14 +4,19 @@ const cors = require('cors');
 const app = express();
 const PORT = 3000;
 
-// Enable CORS to allow requests from your client
-app.use(cors());
+// Enable CORS for all routes
+app.use(cors({
+    origin: '*', // Allow requests from any origin (adjust as necessary)
+    methods: ['GET', 'POST'], // Allow specific HTTP methods
+    allowedHeaders: ['Content-Type', 'Authorization'], // Specify allowed headers
+    exposedHeaders: ['Content-Length', 'X-Foo', 'X-Bar'], // Headers the client can access
+}));
 
 // Helper function to rewrite URLs
 function rewriteUrls(html, baseUrl) {
     const base = new URL(baseUrl);
 
-    // Replace src and href attributes with absolute URLs
+    // Replace src, href, and other attributes with absolute URLs
     html = html
         .replace(/(src|href)=["']?(?!http)([^"']+)["']?/g, (match, p1, p2) => {
             const absoluteUrl = new URL(p2, base).href;
@@ -21,12 +26,10 @@ function rewriteUrls(html, baseUrl) {
             const absoluteUrl = new URL(p2, base).href;
             return `${p1}="${absoluteUrl}"`;
         })
-        // Handling CSS background images in style attributes
         .replace(/background-image:\s*url\(["']?(?!http)([^"')]+)["']?\)/g, (match, p1) => {
             const absoluteUrl = new URL(p1, base).href;
             return `background-image: url("${absoluteUrl}")`;
         })
-        // Handling <script> tags in the response
         .replace(/<script[^>]*src=["']([^"']+)["'][^>]*><\/script>/g, (match, p1) => {
             const absoluteUrl = new URL(p1, base).href;
             return `<script src="${absoluteUrl}"></script>`;
@@ -34,7 +37,6 @@ function rewriteUrls(html, baseUrl) {
 
     return html;
 }
-
 
 // Endpoint to handle requests from the client
 app.get('/fetch', async (req, res) => {
@@ -48,18 +50,25 @@ app.get('/fetch', async (req, res) => {
     console.log(`Received request to fetch: ${targetUrl}`);
 
     try {
-        const response = await axios.get(targetUrl);
+        // Fetch the data from the target URL
+        const response = await axios.get(targetUrl, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0', // Adding a common User-Agent to avoid request blocking
+            },
+        });
         console.log(`Fetched data from ${targetUrl}:`, response.status);
 
         // Rewrite asset URLs in the response data
         const rewrittenHtml = rewriteUrls(response.data, targetUrl);
 
-        // Optionally log a portion of the data (for large responses, you may want to limit this)
-        console.log('Response Data:', rewrittenHtml.substring(0, 1000)); // Log first 1000 characters of the response data
+        // Optionally log a portion of the data
+        console.log('Response Data (first 1000 chars):', rewrittenHtml.substring(0, 1000));
 
+        // Send rewritten data back to the client, along with CORS headers
+        res.setHeader('Access-Control-Allow-Origin', '*'); // Allow requests from any origin
         res.json({
-            data: rewrittenHtml, // Send the rewritten response data back to the client
-            headers: response.headers, // Optionally, send headers
+            data: rewrittenHtml, // Send the rewritten response data
+            headers: response.headers, // Send original headers from the target URL (optional)
         });
     } catch (error) {
         console.error(`Error fetching ${targetUrl}:`, error.message);
@@ -67,6 +76,7 @@ app.get('/fetch', async (req, res) => {
     }
 });
 
+// Start the server
 app.listen(PORT, () => {
     console.log(`Server running at http://localhost:${PORT}`);
 });
